@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registrar Mediciones de Partículas</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Registrar Mediciones de Partículas</h1>
+        <form action="guardar_datos.php" method="POST">
+            <label for="fecha">Fecha:</label>
+            <input type="date" id="fecha" name="fecha" required>
+            
+            <label for="turno">Turno:</label>
+            <select id="turno" name="turno" required>
+                <option value="" disabled selected>Selecciona un turno</option>
+                <option value="1">Turno 1</option>
+                <option value="2">Turno 2</option>
+            </select>
+            
+            <fieldset>
+                <legend>Mediciones</legend>
+                <div>
+                    <label for="corner1_0_5">Corner 1 (0.5 µm):</label>
+                    <input type="number" step="0.01" id="corner1_0_5" name="mediciones[0][particulas_0_5_um]" required>
+                </div>
+                <div>
+                    <label for="corner1_5_0">Corner 1 (5.0 µm):</label>
+                    <input type="number" step="0.01" id="corner1_5_0" name="mediciones[0][particulas_5_0_um]" required>
+                    <input type="hidden" name="mediciones[0][posicion]" value="Corner1">
+                </div>
+                <div>
+                    <label for="corner2_0_5">Corner 2 (0.5 µm):</label>
+                    <input type="number" step="0.01" id="corner2_0_5" name="mediciones[1][particulas_0_5_um]" required>
+                </div>
+                <div>
+                    <label for="corner2_5_0">Corner 2 (5.0 µm):</label>
+                    <input type="number" step="0.01" id="corner2_5_0" name="mediciones[1][particulas_5_0_um]" required>
+                    <input type="hidden" name="mediciones[1][posicion]" value="Corner2">
+                </div>
+                <div>
+                    <label for="corner3_0_5">Corner 3 (0.5 µm):</label>
+                    <input type="number" step="0.01" id="corner3_0_5" name="mediciones[2][particulas_0_5_um]" required>
+                </div>
+                <div>
+                    <label for="corner3_5_0">Corner 3 (5.0 µm):</label>
+                    <input type="number" step="0.01" id="corner3_5_0" name="mediciones[2][particulas_5_0_um]" required>
+                    <input type="hidden" name="mediciones[2][posicion]" value="Corner3">
+                </div>
+                <div>
+                    <label for="corner4_0_5">Corner 4 (0.5 µm):</label>
+                    <input type="number" step="0.01" id="corner4_0_5" name="mediciones[3][particulas_0_5_um]" required>
+                </div>
+                <div>
+                    <label for="corner4_5_0">Corner 4 (5.0 µm):</label>
+                    <input type="number" step="0.01" id="corner4_5_0" name="mediciones[3][particulas_5_0_um]" required>
+                    <input type="hidden" name="mediciones[3][posicion]" value="Corner4">
+                </div>
+                <div>
+                    <label for="middle_0_5">Middle (0.5 µm):</label>
+                    <input type="number" step="0.01" id="middle_0_5" name="mediciones[4][particulas_0_5_um]" required>
+                </div>
+                <div>
+                    <label for="middle_5_0">Middle (5.0 µm):</label>
+                    <input type="number" step="0.01" id="middle_5_0" name="mediciones[4][particulas_5_0_um]" required>
+                    <input type="hidden" name="mediciones[4][posicion]" value="Middle">
+                </div>
+            </fieldset>
+            
+            <input type="submit" value="Guardar Mediciones">
+        </form>
+    </div>
+    <footer>
+        © 2024 Registrar Mediciones. Todos los derechos reservados.
+    </footer>
+</body>
+</html>
