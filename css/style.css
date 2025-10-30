@@ -1,0 +1,95 @@
+body {
+  background-color: #1a1a1a; /* Fondo oscuro */
+  font-family: 'Helvetica Neue', Arial, sans-serif; /* Fuente para el texto */
+  color: #e0e0e0; /* Texto claro */
+  margin: 0; /* Sin margen alrededor del body */
+  padding: 0; /* Sin padding alrededor del body */
+}
+
+* {
+  box-sizing: border-box; /* Asegura que el padding y el border se incluyan en el ancho y alto totales de los elementos */
+}
+
+.container {
+  padding: 20px; /* Espacio interno alrededor del contenedor */
+}
+
+h1 {
+  text-align: center; /* Centra el texto del título */
+  color: #ffffff; /* Color blanco para el texto del título */
+}
+
+.values {
+  display: flex; /* Usa flexbox para el diseño de los elementos hijos */
+  justify-content: space-around; /* Distribuye los elementos hijos con espacio alrededor */
+  margin-bottom: 20px; /* Margen inferior */
+}
+
+.value-box {
+  background-color: #333; /* Fondo oscuro para las cajas de valores */
+  padding: 10px; /* Espacio interno alrededor del contenido */
+  border-radius: 10px; /* Bordes redondeados */
+  text-align: center; /* Centra el texto */
+  width: 45%; /* Ancho fijo para las cajas */
+}
+
+.value-box h2 {
+  margin: 0 0 20px 0; /* Margen superior e inferior para el subtítulo */
+  color: #ffffff; /* Color blanco para el subtítulo */
+}
+
+.value-box p {
+  font-size: 2.5em; /* Tamaño de fuente grande para los valores */
+  font-weight: bold;
+  color: #cccccc; /* Color claro para los valores */
+ 
+}
+
+.charts {
+  display: flex; /* Usa flexbox para el diseño de los gráficos */
+  justify-content: space-around; /* Distribuye los gráficos con espacio alrededor */
+}
+
+.chart-container {
+  position: relative; /* Posicionamiento relativo para el contenedor del gráfico */
+  width: 45%; /* Ancho del 45% del contenedor padre */
+  background-color: #333; /* Fondo oscuro para el contenedor del gráfico */
+  padding: 20px; /* Espacio interno alrededor del gráfico */
+  border-radius: 10px; /* Bordes redondeados */
+}
+
+.indicator {
+  position: absolute; /* Posicionamiento absoluto dentro del contenedor relativo */
+  top: 2px; /* A 10px de la parte superior del contenedor */
+  right: 2px; /* A 10px del borde derecho del contenedor */
+  width: 40px; /* Ancho fijo del indicador */
+  height: 40px; /* Alto fijo del indicador */
+  border-radius: 50%; /* Forma circular */
+}
+
+.card {
+  background: linear-gradient(-45deg, #4444CC, #6666CC, #FF55B8, #CC5555); /* Fondo animado con colores más oscuros */
+  background-size: 400% 400%; /* Tamaño del fondo animado */
+  animation: bg 20s infinite; /* Animación del fondo */
+}
+
+@keyframes bg {
+  0% {
+    background-position: 0% 50%; /* Posición inicial del fondo */
+  }
+  50% {
+    background-position: 100% 50%; /* Posición intermedia del fondo */
+  }
+  100% {
+    background-position: 0% 50%; /* Posición final del fondo */
+  }
+}
+
+footer {
+  text-align: center; /* Centra el texto del pie de página */
+  padding: 20px; /* Espacio interno alrededor del texto */
+  color: #999; /* Color gris claro para el texto */
+  background-color: #222; /* Fondo oscuro para el pie de página */
+  border-top: 1px solid #444; /* Borde superior */
+  margin-top: absolute; /* Empuja el footer hacia el final del contenedor */
+}
