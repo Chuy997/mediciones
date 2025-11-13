@@ -192,4 +192,4 @@ for ($d = $start; $d <= $end; $d = $d->add(new DateInterval('P1D'))) {
 
 echo "\nResumen: inserted=$inserted skipped_existing=$skipped\n";
 
-// php /var/www/html/mediciones/tools/backfill.php --days=5
+// php /var/www/html/mediciones/tools/backfill.php --days=5 
