@@ -1,104 +1,68 @@
 <?php
-// /mediciones/api/summary7d.php
-declare(strict_types=1);
-header('Content-Type: application/json; charset=UTF-8');
+header('Content-Type: application/json');
+header('Cache-Control: no-cache');
+
+// Usar conexión central
+require_once __DIR__.'/../../calibraciones/config.php';
+$pdo = pdo();
 
 try {
-  require_once __DIR__ . '/../conexion.php';   // crea $conn (mysqli) a BD mediciones_particulas
-  if (!isset($conn) || !($conn instanceof mysqli)) {
-    throw new RuntimeException('No se pudo obtener conexión mysqli desde conexion.php');
-  }
-  $conn->set_charset('utf8mb4');
+    // Últimos 7 días
+    $stmt = $pdo->query("
+        SELECT 
+            UNIX_TIMESTAMP(fecha) * 1000 AS ts,
+            posicion,
+            particulas_0_5_um,
+            particulas_5_0_um
+        FROM registros
+        WHERE fecha >= CURDATE() - INTERVAL 7 DAY
+        ORDER BY fecha ASC
+    ");
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-  // --- Config ---
-  // Días a consultar (por defecto 7). Permite overwrite con ?days=30 (1..180)
-  $days = isset($_GET['days']) ? (int)$_GET['days'] : 7;
-  if ($days < 1)   $days = 1;
-  if ($days > 180) $days = 180;
-
-  // Límite visual (ajústalos si tu umbral oficial es distinto)
-  $LIMIT_05 = 11000000; // partículas 0.5 µm
-  $LIMIT_50 = 90000;    // partículas 5.0 µm
-
-  // Posiciones esperadas (si aparece alguna extra en DB, también la incluimos dinámicamente)
-  $EXPECTED_POS = ['Corner1','Corner2','Corner3','Corner4','Middle'];
-
-  // Rango de fechas: hoy incluido, hacia atrás (days-1)
-  $today = new DateTimeImmutable('today'); // sin tiempo
-  $start = $today->sub(new DateInterval('P'.($days-1).'D'))->format('Y-m-d');
-  $end   = $today->format('Y-m-d');
-
-  // Query: promedio por día y posición (si hay varios turnos en un día, promediamos)
-  $sql = "
-    SELECT
-      fecha,
-      posicion,
-      AVG(particulas_0_5_um) AS avg05,
-      AVG(particulas_5_0_um) AS avg50
-    FROM registros
-    WHERE fecha BETWEEN ? AND ?
-    GROUP BY fecha, posicion
-    ORDER BY fecha ASC
-  ";
-  $stmt = $conn->prepare($sql);
-  if (!$stmt) throw new RuntimeException('Prepare error: '.$conn->error);
-  $stmt->bind_param('ss', $start, $end);
-  if (!$stmt->execute()) throw new RuntimeException('Execute error: '.$stmt->error);
-  $res = $stmt->get_result();
-
-  // Construir eje X (todas las fechas del rango)
-  $labels = [];
-  $idxByDate = [];
-  for ($d = new DateTimeImmutable($start), $i=0; $d <= $today; $d = $d->add(new DateInterval('P1D')), $i++) {
-    // epoch ms a medianoche local
-    $ts = $d->getTimestamp() * 1000;
-    $labels[] = $ts;
-    $idxByDate[$d->format('Y-m-d')] = $i;
-  }
-
-  // Detectar posiciones presentes en DB además de las esperadas
-  $positions = $EXPECTED_POS;
-
-  // Inicializar matrices (series por posición)
-  $series05 = [];
-  $series50 = [];
-  foreach ($positions as $p) {
-    $series05[$p] = array_fill(0, count($labels), null);
-    $series50[$p] = array_fill(0, count($labels), null);
-  }
-
-  // Volcar resultados
-  while ($row = $res->fetch_assoc()) {
-    $fecha    = (string)$row['fecha'];
-    $pos      = (string)$row['posicion'];
-    $avg05    = isset($row['avg05']) ? (float)$row['avg05'] : null;
-    $avg50    = isset($row['avg50']) ? (float)$row['avg50'] : null;
-
-    // Si aparece una posición no prevista, la añadimos y prellenamos
-    if (!isset($series05[$pos])) {
-      $series05[$pos] = array_fill(0, count($labels), null);
-      $series50[$pos] = array_fill(0, count($labels), null);
-      $positions[] = $pos;
+    // Agrupar por día (timestamp de medianoche en ms)
+    $data = [];
+    foreach ($rows as $r) {
+        $day = (int)($r['ts'] - ($r['ts'] % 86400000)); // redondear a día
+        if (!isset($data[$day])) {
+            $data[$day] = [
+                '0_5' => ['Corner1'=>0,'Corner2'=>0,'Corner3'=>0,'Corner4'=>0,'Middle'=>0,'count'=>0],
+                '5_0' => ['Corner1'=>0,'Corner2'=>0,'Corner3'=>0,'Corner4'=>0,'Middle'=>0,'count'=>0]
+            ];
+        }
+        $pos = $r['posicion'];
+        $data[$day]['0_5'][$pos] += (int)$r['particulas_0_5_um'];
+        $data[$day]['5_0'][$pos] += (int)$r['particulas_5_0_um'];
+        $data[$day]['0_5']['count']++;
+        $data[$day]['5_0']['count']++;
     }
 
-    if (isset($idxByDate[$fecha])) {
-      $i = $idxByDate[$fecha];
-      $series05[$pos][$i] = $avg05;
-      $series50[$pos][$i] = $avg50;
-    }
-  }
+    // Convertir a promedios y estructura final
+    ksort($data);
+    $labels = [];
+    $series05 = ['Corner1'=>[],'Corner2'=>[],'Corner3'=>[],'Corner4'=>[],'Middle'=>[]];
+    $series50 = ['Corner1'=>[],'Corner2'=>[],'Corner3'=>[],'Corner4'=>[],'Middle'=>[]];
 
-  echo json_encode([
-    'status'   => 'success',
-    'labels'   => $labels,     // epoch ms por día
-    'series05' => $series05,   // por posición
-    'series50' => $series50,   // por posición
-    'limit05'  => $LIMIT_05,
-    'limit50'  => $LIMIT_50,
-    'updated_at' => date('c'),
-    'range'    => ['start'=>$start, 'end'=>$end, 'days'=>$days],
-  ]);
-} catch (Throwable $e) {
-  http_response_code(500);
-  echo json_encode(['status'=>'error','message'=>$e->getMessage()]);
+    foreach ($data as $ts => $day) {
+        $labels[] = $ts;
+        foreach (['Corner1','Corner2','Corner3','Corner4','Middle'] as $p) {
+            $avg05 = $day['0_5']['count'] ? $day['0_5'][$p] / ($day['0_5']['count']/5) : 0;
+            $avg50 = $day['5_0']['count'] ? $day['5_0'][$p] / ($day['5_0']['count']/5) : 0;
+            $series05[$p][] = (int)$avg05;
+            $series50[$p][] = (int)$avg50;
+        }
+    }
+
+    echo json_encode([
+        'status' => 'success',
+        'labels' => $labels,
+        'series05' => $series05,
+        'series50' => $series50,
+        'limit05' => 10500000,
+        'limit50' => 87900
+    ], JSON_NUMERIC_CHECK);
+
+} catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 }
