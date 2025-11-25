@@ -1,24 +1,17 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Backfill de registros (polvo) por día y posición.
- * - Omite domingos.
- * - Omite festivos definidos en $FESTIVOS.
- * - Evita duplicados.
- * - Usa el último valor real por posición y simula mediciones humanas:
- *     • Variación relativa suave (±2%)
- *     • Ruido absoluto adicional (±0.5% del valor base)
- *     • Límites suaves para evitar valores absurdos
- */
-
-if (php_sapi_name() !== 'cli') { fwrite(STDERR, "Ejecuta desde CLI\n"); exit(1); }
+if (php_sapi_name() !== 'cli') {
+    fwrite(STDERR, "Ejecuta desde CLI\n");
+    exit(1);
+}
 
 require_once __DIR__ . '/../conexion.php';
-if (!isset($conn) || !($conn instanceof mysqli)) {
-  fwrite(STDERR, "No se pudo conectar (conexion.php)\n"); exit(1);
+if (!isset($conn) || !($conn instanceof PDO)) {
+    fwrite(STDERR, "No se pudo conectar (conexion.php)\n");
+    exit(1);
 }
-$conn->set_charset('utf8mb4');
+// PDO ya usa utf8mb4 si el DSN lo especifica (y tu DSN ya lo hace)
 
 // ====== CONFIGURACIÓN ======
 $DEFAULT_POSITIONS = ['Corner1','Corner2','Corner3','Corner4','Middle'];
@@ -50,8 +43,11 @@ $HARD_MAX_50 = 90000;
 // ====== PARSE ARGS ======
 $args = [];
 foreach ($argv as $a) {
-  if (preg_match('/^--([^=]+)=(.*)$/', $a, $m)) { $args[$m[1]] = $m[2]; }
-  elseif ($a === '--dry-run') { $args['dry-run'] = '1'; }
+  if (preg_match('/^--([^=]+)=(.*)$/', $a, $m)) {
+      $args[$m[1]] = $m[2];
+  } elseif ($a === '--dry-run') {
+      $args['dry-run'] = '1';
+  }
 }
 
 $today = new DateTimeImmutable('today');
@@ -63,7 +59,9 @@ if (!empty($args['start']) && !empty($args['end'])) {
   $start = $today->sub(new DateInterval('P'.($days-1).'D'));
   $end   = $today;
 }
-if ($end < $start) { [$start,$end] = [$end,$start]; }
+if ($end < $start) {
+    [$start, $end] = [$end, $start];
+}
 
 $positions = $DEFAULT_POSITIONS;
 if (!empty($args['positions'])) {
@@ -76,7 +74,9 @@ if (!empty($args['shifts'])) {
   if (!$shifts) $shifts = [1];
 }
 
-if (isset($args['skip-sunday'])) { $SKIP_SUNDAY = (bool)(int)$args['skip-sunday']; }
+if (isset($args['skip-sunday'])) {
+    $SKIP_SUNDAY = (bool)(int)$args['skip-sunday'];
+}
 
 $DRY = !empty($args['dry-run']);
 
@@ -90,17 +90,11 @@ function isSunday(DateTimeImmutable $d): bool {
 }
 
 function applyRealisticVariation(int $base, float $relPct, float $absPct, int $hardMin, int $hardMax): int {
-  // Variación relativa (±2%)
   $relDelta = $base * $relPct;
   $val = $base + random_int(-(int)$relDelta, (int)$relDelta);
-  
-  // Ruido absoluto adicional (±0.5% del valor base)
   $absNoise = (int)($base * $absPct);
   $val += random_int(-$absNoise, $absNoise);
-  
-  // Aplicar límites duros
   $val = max($hardMin, min($hardMax, $val));
-  
   return (int)round($val);
 }
 
@@ -118,78 +112,94 @@ $stmtLast = $conn->prepare("
   )
 ");
 if (!$stmtLast) {
-  fwrite(STDERR, "Error preparing last-values query: " . $conn->error . "\n");
-  exit(1);
+    fwrite(STDERR, "Error preparing last-values query\n");
+    exit(1);
 }
 
-$stmtLast->bind_param(str_repeat('s', count($positions)), ...$positions);
-$stmtLast->execute();
-$result = $stmtLast->get_result();
-while ($row = $result->fetch_assoc()) {
-  $lastValues[$row['posicion']] = [
-    'particulas_0_5_um' => (int)$row['particulas_0_5_um'],
-    'particulas_5_0_um' => (int)$row['particulas_5_0_um'],
-  ];
+try {
+    $stmtLast->execute($positions);
+} catch (PDOException $e) {
+    fwrite(STDERR, "Query error: " . $e->getMessage() . "\n");
+    exit(1);
 }
-$stmtLast->close();
+
+$result = $stmtLast->fetchAll(PDO::FETCH_ASSOC);
+foreach ($result as $row) {
+    $lastValues[$row['posicion']] = [
+        'particulas_0_5_um' => (int)$row['particulas_0_5_um'],
+        'particulas_5_0_um' => (int)$row['particulas_5_0_um'],
+    ];
+}
 
 foreach ($positions as $pos) {
-  if (!isset($lastValues[$pos])) {
-    $lastValues[$pos] = $FALLBACK;
-    echo "WARN: sin historial para '$pos', usando valores por defecto.\n";
-  }
+    if (!isset($lastValues[$pos])) {
+        $lastValues[$pos] = $FALLBACK;
+        echo "WARN: sin historial para '$pos', usando valores por defecto.\n";
+    }
 }
 
 // ====== PREPARED STATEMENTS ======
-$check = $conn->prepare("SELECT COUNT(*) FROM registros WHERE fecha=? AND posicion=?");
+$check = $conn->prepare("SELECT COUNT(*) FROM registros WHERE fecha = ? AND posicion = ?");
 $ins   = $conn->prepare("INSERT INTO registros (fecha, turno, posicion, particulas_0_5_um, particulas_5_0_um)
-                         VALUES (?,?,?,?,?)");
+                         VALUES (?, ?, ?, ?, ?)");
 if (!$check || !$ins) {
-  fwrite(STDERR, "Prepare error: " . $conn->error . "\n");
-  exit(1);
+    fwrite(STDERR, "Prepare error\n");
+    exit(1);
 }
 
-$inserted = 0; $skipped = 0;
+$inserted = 0;
+$skipped = 0;
 
 for ($d = $start; $d <= $end; $d = $d->add(new DateInterval('P1D'))) {
-  $ymd = $d->format('Y-m-d');
+    $ymd = $d->format('Y-m-d');
 
-  if ($SKIP_SUNDAY && isSunday($d)) { echo "SKIP domingo $ymd\n"; continue; }
-  if (isHoliday($d, $FESTIVOS))     { echo "SKIP festivo $ymd\n"; continue; }
-
-  foreach ($positions as $pos) {
-    $check->bind_param('ss', $ymd, $pos);
-    if (!$check->execute()) { fwrite(STDERR, "Check error: " . $check->error . "\n"); exit(1); }
-    $count = 0;
-    $check->bind_result($count);
-    $check->fetch();
-    $check->free_result();
-
-    if ($count > 0) { $skipped++; continue; }
-
-    $turno = $shifts[0];
-    $base05 = $lastValues[$pos]['particulas_0_5_um'];
-    $base50 = $lastValues[$pos]['particulas_5_0_um'];
-
-    // Generar valores con variación realista
-    $v05 = applyRealisticVariation($base05, $RELATIVE_VARIATION, $ABSOLUTE_NOISE_PCT, $HARD_MIN_05, $HARD_MAX_05);
-    $v50 = applyRealisticVariation($base50, $RELATIVE_VARIATION, $ABSOLUTE_NOISE_PCT, $HARD_MIN_50, $HARD_MAX_50);
-
-    // Actualizar el valor base para el siguiente día (simulación secuencial)
-    $lastValues[$pos]['particulas_0_5_um'] = $v05;
-    $lastValues[$pos]['particulas_5_0_um'] = $v50;
-
-    if ($DRY) {
-      echo "DRY  insert: fecha=$ymd turno=$turno pos=$pos  0.5um=$v05  5.0um=$v50\n";
-    } else {
-      $ins->bind_param('sissi', $ymd, $turno, $pos, $v05, $v50);
-      if (!$ins->execute()) { fwrite(STDERR, "Insert error: " . $ins->error . "\n"); exit(1); }
-      $inserted++;
-      echo "OK   insert: $ymd $pos (t$turno) -> 0.5=$v05  5.0=$v50\n";
+    if ($SKIP_SUNDAY && isSunday($d)) {
+        echo "SKIP domingo $ymd\n";
+        continue;
     }
-  }
+    if (isHoliday($d, $FESTIVOS)) {
+        echo "SKIP festivo $ymd\n";
+        continue;
+    }
+
+    foreach ($positions as $pos) {
+        try {
+            $check->execute([$ymd, $pos]);
+        } catch (PDOException $e) {
+            fwrite(STDERR, "Check error: " . $e->getMessage() . "\n");
+            exit(1);
+        }
+        $count = (int)$check->fetchColumn();
+
+        if ($count > 0) {
+            $skipped++;
+            continue;
+        }
+
+        $turno = $shifts[0];
+        $base05 = $lastValues[$pos]['particulas_0_5_um'];
+        $base50 = $lastValues[$pos]['particulas_5_0_um'];
+
+        $v05 = applyRealisticVariation($base05, $RELATIVE_VARIATION, $ABSOLUTE_NOISE_PCT, $HARD_MIN_05, $HARD_MAX_05);
+        $v50 = applyRealisticVariation($base50, $RELATIVE_VARIATION, $ABSOLUTE_NOISE_PCT, $HARD_MIN_50, $HARD_MAX_50);
+
+        // Actualizar para secuencia
+        $lastValues[$pos]['particulas_0_5_um'] = $v05;
+        $lastValues[$pos]['particulas_5_0_um'] = $v50;
+
+        if ($DRY) {
+            echo "DRY  insert: fecha=$ymd turno=$turno pos=$pos  0.5um=$v05  5.0um=$v50\n";
+        } else {
+            try {
+                $ins->execute([$ymd, $turno, $pos, $v05, $v50]);
+            } catch (PDOException $e) {
+                fwrite(STDERR, "Insert error: " . $e->getMessage() . "\n");
+                exit(1);
+            }
+            $inserted++;
+            echo "OK   insert: $ymd $pos (t$turno) -> 0.5=$v05  5.0=$v50\n";
+        }
+    }
 }
 
 echo "\nResumen: inserted=$inserted skipped_existing=$skipped\n";
-
-// php /var/www/html/mediciones/tools/backfill.php --days=5 
